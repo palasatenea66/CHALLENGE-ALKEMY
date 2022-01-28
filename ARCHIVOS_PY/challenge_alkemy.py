@@ -86,10 +86,9 @@ def cargar_museo_en_df(museo_archivo):
     museo_df['fecha_carga'] = fecha_carga
 
     # combino 'cod_area' + 'Tel' en una columna: 'Num_tel'
-    museo_df['cod_area'] = (museo_df['cod_area'].astype(int)).astype(str)
-    museo_df['Tel'] = museo_df['Tel'].astype(str)
+    museo_df['cod_area'] = (museo_df['cod_area'].astype('int')).astype('str')
+    museo_df['Tel'] = museo_df['Tel'].astype('str')
     museo_df['Num_tel'] = museo_df['cod_area'] + '-' + museo_df['Tel']
-
 
     return museo_df
 
@@ -106,6 +105,9 @@ def cargar_cine_en_df(cine_archivo):
     fecha_carga = cine_archivo[-14:-4]
 
     cine_df.rename(columns = {'Teléfono': 'Tel'}, inplace = True)
+    cine_df['espacio_INCAA'] = cine_df.espacio_INCAA.map({'si': 1, 'SI': 1})
+    cine_df['espacio_INCAA'].fillna(0, inplace = True)
+    cine_df['espacio_INCAA'].astype('int64')
 
     # agrego columnas p/ normalizar con 'museo' y 'biblioteca' en posic fijas
     cine_df.insert(5, 'subcategoria', 0)
@@ -115,10 +117,9 @@ def cargar_cine_en_df(cine_archivo):
     cine_df.insert(30, 'fecha_carga', fecha_carga)
 
     # combino 'cod_area' + 'Tel' en una columna: 'Num_tel'
-    cine_df['cod_area'] = cine_df['cod_area'].astype(str)
-    cine_df['Tel'] = cine_df['Tel'].astype(str)
+    cine_df['cod_area'] = cine_df['cod_area'].astype('str')
+    cine_df['Tel'] = cine_df['Tel'].astype('str')
     cine_df['Num_tel'] = cine_df['cod_area'] + '-' + cine_df['Tel']
-
 
     return cine_df
 
@@ -154,10 +155,9 @@ def cargar_biblio_en_df(biblio_archivo):
     biblio_df.insert(30, 'fecha_carga', fecha_carga)
 
     # combino 'cod_area' + 'Tel' en una columna: 'Num_tel'
-    biblio_df['cod_area'] = biblio_df['cod_area'].astype(str)
-    biblio_df['Tel'] = biblio_df['Tel'].astype(str)
+    biblio_df['cod_area'] = biblio_df['cod_area'].astype('str')
+    biblio_df['Tel'] = biblio_df['Tel'].astype('str')
     biblio_df['Num_tel'] = biblio_df['cod_area'] + '-' + biblio_df['Tel']
-
 
     return biblio_df
 
@@ -196,36 +196,38 @@ def preparar_info2tabla2(df_completo):
     popular la tabla2 (categoría, fuente y provincia) de la base de datos.
     Parámetro: nombre de dataframe con datos conjuntos'''
 
-    fecha = date.today()    # fecha de descarga ('hoy') como objeto datetime
-    hoy = datetime.strftime(fecha, '%d-%m-%Y') # ahora, como str
     # columnas 'Categoría', 'Provincia', 'Fuente', 'fecha_carga'
+
+    # empiezo con agrupar x Categoría
     # copio para no sobreescribir df original
     df_categoria = (df_completo.copy()).groupby('Categoría')
+    # colapso todas las columnas en una tomando count() de 'Nombre'
     cant_tot_categoria = df_categoria.Nombre.count()
-    cant_tot_categoria.to_frame()
-    cant_tot_categoria['fecha_carga'] = hoy
+    # x colapsar las columnas, se convierte en Serie, que hay que pasar a df
+    # 'Categoría' se toma como índice, se reinterpreta como col c/ reset_index
+    totXcategoria = (cant_tot_categoria.to_frame()).reset_index()
+    # renombro la cantidad
+    totXcategoria.rename(columns = {'Nombre': 'Cantidad total'})
+    # agrego la fecha
+    totXcategoria['fecha_carga'] = df_completo['fecha_carga']
+    print(totXcategoria)
 
-    print(cant_tot_categoria)
-    print(cant_tot_categoria.shape)
-
+    # agrupamos por Fuente y procedemos como antes
     df_fuente = (df_completo.copy()).groupby('Fuente')
     cant_tot_fuente = df_fuente.Nombre.count()
-    cant_tot_fuente.to_frame()
-    cant_tot_fuente['fecha_carga'] = hoy
+    totXfuente = (cant_tot_fuente.to_frame()).reset_index()
+    totXfuente.rename(columns = {'Nombre': 'Cantidad total'})
+    totXfuente['fecha_carga'] = df_completo['fecha_carga']
+    print(totXfuente)
 
-    print(cant_tot_fuente)
-    print(cant_tot_fuente.shape)
-
-    df_prov_cat = (df_completo.copy()).groupby(['Categoría','Provincia'])
-    cant_tot_prov_cat = df_prov_cat.Nombre.count()
-    cant_tot_prov_cat.to_frame()
-    cant_tot_prov_cat['fecha_carga'] = hoy
-
-    print(cant_tot_prov_cat)
-    print(cant_tot_prov_cat.shape)
+    # ahora agrupamos por Provincia y Categoría y lo tratamos como antes
+    df_prov_cat = (df_completo.copy()).groupby(['Provincia', 'Categoría'])
+    totXcat_prov = ((df_prov_cat.Nombre.count()).to_frame()).reset_index()
+    totXcat_prov.rename(columns = {'Nombre': 'Cantidad total'})
+    totXcat_prov['fecha_carga'] = df_completo['fecha_carga']
+    print(totXcat_prov)
 
     df_tabla2 = df_completo.copy()   # sacar y modificar la tabla
-
 
     return df_tabla2
 
@@ -236,31 +238,28 @@ def preparar_info2tabla3(df_completo):
     Parámetro: nombre de dataframe con datos conjuntos '''
 
     # selecciono las columnas para la Tabla3
-    col_selec = ['Provincia', 'Pantallas', 'Butacas', 'espacio_INCAA',
-                 'fecha_carga']
+    col_selec = ['Provincia', 'Pantallas', 'Butacas', 'espacio_INCAA']
 
-    # selecciono sólo las 'Salas de cine' y creo df nuevo c/ las col necesarias
+    # selecciono sólo las 'Salas de cine'
     df_tab3 = df_completo[df_completo['Categoría'] ==
-                            'Salas de cine'][col_selec].copy()
-    df_tabla3 = df_tab3.count()
+                            'Salas de cine'].copy()
+    # creo df nuevo c/ las col necesarias, agrupado por provincia, la suma de
+    # los valores agrupados y con
+    df_tabla3 = (df_tab3[col_selec].groupby('Provincia').sum()).reset_index()
 
+    df_tabla3['fecha_carga'] = df_completo['fecha_carga']
     print(df_tabla3)
-    print(df_tabla3.shape)
-
-    # indico que estas columnas tienen números enteros
-    #df_tabla3['Pantallas'] =  df_tabla3['Pantallas'].astype(int)
-    #df_tabla3['Butacas'] =  df_tabla3['Butacas'].astype(int)
-
 
     return df_tabla3
+
 
 def conectar_y_popular_db(df_tabla1, df_tabla2, df_tabla3):
     ''' Genera una conexión al motor de PostgreSQL usando sessionmaker y
     scoped_session de SQLalchemy, para popular las tablas previamente creadas
     corriendo 'crear_tablas_postgres.py' mediante df.to_sql.'''
 
-    # viene de 'config.ini': 'postgresql://postgres:pepe@localhost:5432/postgres'
-    param = config(seccion = 'postgresql')
+    # desde 'config.ini': 'postgresql://postgres:pepe@localhost:5432/postgres'
+    param = config(archivo = 'config.ini', seccion = 'postgresql')
     uno = param['user']
     dos = param['password']
     tres = param['host']
@@ -269,26 +268,26 @@ def conectar_y_popular_db(df_tabla1, df_tabla2, df_tabla3):
     base_datos = f"postgresql://{uno}:{dos}@{tres}:{cuatro}/{cinco}"
     motor_db = create_engine(base_datos)
 
-    # populo las tablas, si hay información previa, la reemplazo
-    # usar 'with xxx as xxx: garantiza que la conexión será cerrada al terminar
+    # populo las tablas: si hay información previa, la reemplazo
+    # usar 'with xxx as xxx:' garantiza q la conexión será cerrada al terminar
     # la inyección de datos
-    with motor_db.begin() as con:
-        df_tabla1.to_sql('tabla1', con, if_exists = 'replace', index = False)
-        df_tabla2.to_sql('tabla2', con, if_exists = 'replace', index = False)
-        df_tabla3.to_sql('tabla3_cines', con, if_exists = 'replace',
+    with motor_db.begin() as conn:
+        df_tabla1.to_sql('tabla1', conn, if_exists = 'replace', index = False)
+        df_tabla2.to_sql('tabla2', conn, if_exists = 'replace', index = False)
+        df_tabla3.to_sql('tabla3_cines', conn, if_exists = 'replace',
                          index = False)
 
     return
 
 
-def fn_ppal():
+def el_anillo_unico_para_gobernarlos_a_todos():
     ''' Organiza todo el pipeline de descarga y procesamiento de los archivos
     fuente hasta la población de las tablas Postgres.
-    Extrae los urls y parámetros para conectarse al motor de Postgres del
-    archivo de configuración "config.ini"'''
+    Extrae los urls de archivos fuente y parámetros para conectarse al motor de
+    Postgres del archivo de configuración "config.ini"'''
 
     # levanto los urls de los archivos fuentes desde 'config.ini'
-    urls = config(seccion = 'url')
+    urls = config(archivo = 'config.ini', seccion = 'url')
     url_museo = urls.get('url_museo')
     url_cine = urls.get('url_cine')
     url_biblio = urls.get('url_biblio')
@@ -310,7 +309,6 @@ def fn_ppal():
 
     # uno los 3 dataframes en un único df
     df_datos_cjtos = unir_df(df_museo, df_cine, df_biblio)
-    print(df_datos_cjtos['Web'])
 
     # preparo df 's con la info para popular las tablas de la BD
     tabla1_df = preparar_info2tabla1(df_datos_cjtos)
@@ -325,4 +323,4 @@ def fn_ppal():
 
 if __name__ == '__main__':
 
-    fn_ppal()
+    el_anillo_unico_para_gobernarlos_a_todos()

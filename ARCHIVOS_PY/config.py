@@ -8,9 +8,9 @@ Created on Mon Jan 24 04:49:11 2022
 
 from configparser import ConfigParser
 
-def config(archivo ='config.ini', seccion):
-    '''Lee parámetros de un archivo de configuración 'config.ini', para su uso
-    posterior '''
+def config(archivo, seccion):
+    '''Lee parámetros de las distintas secciones de un archivo de configuración
+    (como 'config.ini'), para su uso posterior '''
 
     # Crear el parser y leer el archivo
     parser = ConfigParser()
@@ -18,7 +18,7 @@ def config(archivo ='config.ini', seccion):
 
     # Obtener la sección de conexión a la base de datos
     db = {}
-    
+
     if parser.has_section(seccion):
         params = parser.items(seccion)
         for param in params:
