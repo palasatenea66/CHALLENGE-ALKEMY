@@ -15,7 +15,7 @@ import locale
 from config import config
 from datetime import date, datetime
 from sqlalchemy import create_engine
-
+from unidecode import unidecode
 
 
 
@@ -34,7 +34,7 @@ def ordenar_fuentes(nombre_archivo):
     que: categoría/mes-año/categoria-dia-mes-año.csv
     Parámetro: nombre del archivo a reubicar'''
 
-    locale.setlocale(locale.LC_ALL, ('es_ES', 'UTF-8')) # cambio el idioma a ES
+    #locale.setlocale(locale.LC_ALL, ('es_ES.utf8')) # cambio el idioma a ES
     fecha = date.today()    # fecha de descarga ('hoy') como objeto datetime
     hoy = datetime.strftime(fecha, '%d-%m-%Y')   # lo paso a cadena
     anio = datetime.strftime(fecha, '%Y') # recupero como str: año...
@@ -52,45 +52,78 @@ def ordenar_fuentes(nombre_archivo):
     return fuente_ordenada
 
 
+def cargar_csv2pandas(archivo):
+    ''' Carga el archivo en un dataframe de Pandas y asigna tipo de datos a 
+    algunas columnas comunes a todos los archivos. 
+    Crea una nueva columna con la fecha de carga.'''
+    df = pd.read_csv(archivo)           # cargo el dataframe
+        
+    # paso nombre de columnas a minúsculas y elimino tildes y 'ñ'
+    columnas = df.columns.values.to_list()
+    nuevas = []
+    for columna in columnas:
+        nueva_columna = unidecode(columna.lower())
+        nuevas.append(nueva_columna)
+    df.columns = nuevas
+    print(df.columns)
+
+    df.fillna(0, inplace = True)        # reemplazo NaN x 0's 
+    
+    # asigno tipos de datos a algunas de las columnas que comparten nombre en 
+    # todos los archivos
+    df[['cod_loc', 'idprovincia', 'iddepartamento', 
+        'telefono']].astype(dtype = 'int')
+    df[['categoria', 'provincia', 'direccion', 'nombre', 'mail', 'web',
+        'localidad', 'piso', 'tipolatitudlongitud', 'cp',
+        'fuente']].astype(dtype = 'str')
+    df[['latitud', 'longitud']].astype(dtype = 'float')
+
+    # recupero la fecha a partir del nombre del archivo     
+    fecha_carga = archivo[-14:-4]
+    # agrego col de fecha de carga
+    df['fecha_carga'] = fecha_carga
+
+    return df
+  
+def cambiar_tel(df):
+    ''' Agrega al 'df' una columna  'num_tel' con el número de teléfono
+     y su código de área con formato "str".'''
+
+    # combino 'cod_area' + 'telefono' en una columna: 'num_tel'
+    df['cod_area'] = df['cod_area'].astype(dtype = 'str')
+    df['telefono'] = df['telefono'].astype(dtype = 'str')    
+    df['num_tel'] = df['cod_area'] + '-' + df['telefono']
+
+    return df
+
 def cargar_museo_en_df(museo_archivo):
     ''' Convierte el archivo con info de 'museos' a un dataframe, renombra y
     agrega columnas necesarias para normalizar con los demás archivos de cine y
     bibliotecas. También agrega una columna con la fecha de carga.
     Parámetro: nombre de archivo de museos'''
 
-    museo_df = pd.read_csv(museo_archivo) # cargo el dataframe
-    museo_df.fillna(0, inplace = True)  # reemplazo NaN x 0's
+    museo_df = cargar_csv2pandas(museo_archivo) # cargo el dataframe
 
-    fecha_carga = museo_archivo[-14:-4]
-    # renombro algunas columnas para que coincidan con 'cine' y 'biblioteca'
-    museo_df.rename(columns = {'categoria': 'Categoría',
-                               'Info_adicional': 'Información adicional',
-                               'provincia': 'Provincia',
-                               'localidad': 'Localidad',
-                               'nombre': 'Nombre',
-                               'direccion': 'Dirección',
-                               'piso': 'Piso',
-                               'telefono': 'Tel',
-                               'fuente': 'Fuente'}, inplace = True)
-
+    # renombro algunas columnas para normalizar nombres de todos los archivos
+    museo_df.rename(columns = {'info_adicional': 'informacion adicional'}, 
+                    inplace = True)
 
     # agrego columnas faltantes en su pos para normalizar con 'cine' y 'biblio'
-    museo_df.insert(7, 'Departamento', 0)
+    museo_df.insert(7, 'departamento', 0)
     museo_df.insert(25, 'tipo_gestion', 0)
-    museo_df.insert(26, 'Pantallas', 0)
-    museo_df.insert(27, 'Butacas', 0)
-    museo_df.insert(28, 'espacio_INCAA', 0)
-    museo_df.insert(29, 'año_actualizacion', 0)
+    museo_df.insert(26, 'pantallas', 0)
+    museo_df.insert(27, 'butacas', 0)
+    museo_df.insert(28, 'espacio_incaa', 0)
+    museo_df.insert(29, 'ano_actualizacion', 0)
 
-    # agrego col de fecha descarga
-    museo_df['fecha_carga'] = fecha_carga
+    # asigno tipos de datos a las columnas que faltaban
+    museo_df[['informacion adicional','departamento','observaciones','direccion',
+    'subcategoria', 'tipo_gestion', 'jurisdiccion']].astype(dtype = 'str')
+    museo_df[['pantallas', 'butacas', 'espacio_incaa', 'cod_area', 'idsinca',
+              'ano_actualizacion', 'año_inauguracion']].astype(dtype = 'int')
 
-    # combino 'cod_area' + 'Tel' en una columna: 'Num_tel'
-    museo_df['cod_area'] = (museo_df['cod_area'].astype(int)).astype(str)
-    museo_df['Tel'] = museo_df['Tel'].astype(str)
-    museo_df['Num_tel'] = museo_df['cod_area'] + '-' + museo_df['Tel']
-
-
+    museo_df = cambiar_tel(museo_df)
+    
     return museo_df
 
 
@@ -100,26 +133,25 @@ def cargar_cine_en_df(cine_archivo):
     y bibliotecas. También agrega una columna con la fecha de carga.
     Parámetro: nombre de archivo de cine'''
 
-    cine_df = pd.read_csv(cine_archivo) # cargo el dataframe
-    cine_df.fillna(0, inplace = True)   # reemplazo NaN x 0's
+    cine_df = cargar_csv2pandas(cine_archivo) # cargo el dataframe
+    
 
-    fecha_carga = cine_archivo[-14:-4]
-
-    cine_df.rename(columns = {'Teléfono': 'Tel'}, inplace = True)
+    cine_df['espacio_incaa'] = cine_df.espacio_incaa.map({'si': 1, 'SI': 1})    
 
     # agrego columnas p/ normalizar con 'museo' y 'biblioteca' en posic fijas
     cine_df.insert(5, 'subcategoria', 0)
     cine_df.insert(22,'jurisdiccion', 0)
-    cine_df.insert(23, 'año_inauguracion', 0)
-    cine_df.insert(24, 'IDSInCA', 0)
-    cine_df.insert(30, 'fecha_carga', fecha_carga)
+    cine_df.insert(23, 'ano_inauguracion', 0)
+    cine_df.insert(24, 'idsinca', 0)
 
-    # combino 'cod_area' + 'Tel' en una columna: 'Num_tel'
-    cine_df['cod_area'] = cine_df['cod_area'].astype(str)
-    cine_df['Tel'] = cine_df['Tel'].astype(str)
-    cine_df['Num_tel'] = cine_df['cod_area'] + '-' + cine_df['Tel']
-
-
+    # asigno tipo de datos a las columnas no definidas antes        
+    cine_df[['informacion adicional','departamento','observaciones','direccion',
+         'subcategoria', 'tipo_gestion', 'jurisdiccion']].astype(dtype = 'str')
+    cine_df[['pantallas', 'butacas', 'espacio_incaa', 'cod_area', 'idsinca',
+              'ano_actualizacion', 'año_inauguracion']].astype(dtype = 'int')
+    
+    cine_df = cambiar_tel(cine_df)
+     
     return cine_df
 
 
@@ -129,35 +161,30 @@ def cargar_biblio_en_df(biblio_archivo):
     y museos. También agrega una columna con la fecha de carga.
     Parámetro: nombre de archivo de bibliotecas'''
 
-    biblio_df = pd.read_csv(biblio_archivo) # cargo el dataframe
+    biblio_df = cargar_csv2pandas(biblio_archivo) # cargo el dataframe
     biblio_df.fillna(0, inplace = True)     # reemplazo NaN x 0's
 
-
-    fecha_carga = biblio_archivo[-14:-4]
     # renombro columnas para normalizar con 'museo' y 'cine'
-    biblio_df.rename(columns= {'Observacion': 'Observaciones',
-                               'Subcategoria': 'subcategoria',
-                               'Domicilio': 'Dirección',
-                               'Cod_tel': 'cod_area',
-                               'Teléfono': 'Tel',
-                               'año_inicio': 'año_inauguracion',
-                               'Tipo_gestion': 'tipo_gestion',
-                               'Año_actualizacion': 'año_actualizacion'},
+    biblio_df.rename(columns= {'observacion': 'observaciones',
+                               'domicilio': 'direccion',
+                               'cod_tel': 'cod_area',
+                               'ano_inicio': 'ano_inauguracion'},
                      inplace = True)
 
     # agrego columnas para normalizar con 'museo' y 'cine'
     biblio_df.insert(22,'jurisdiccion', 0)
-    biblio_df.insert(24, 'IDSInCA', 0)
-    biblio_df.insert(26, 'Pantallas', 0)
-    biblio_df.insert(27, 'Butacas', 0)
-    biblio_df.insert(28, 'espacio_INCAA', 0)
-    biblio_df.insert(30, 'fecha_carga', fecha_carga)
-
-    # combino 'cod_area' + 'Tel' en una columna: 'Num_tel'
-    biblio_df['cod_area'] = biblio_df['cod_area'].astype(str)
-    biblio_df['Tel'] = biblio_df['Tel'].astype(str)
-    biblio_df['Num_tel'] = biblio_df['cod_area'] + '-' + biblio_df['Tel']
-
+    biblio_df.insert(24, 'idsinca', 0)
+    biblio_df.insert(26, 'pantallas', 0)
+    biblio_df.insert(27, 'butacas', 0)
+    biblio_df.insert(28, 'espacio_incaa', 0)
+    
+    # asigno tipo de datos a las columnas no definidas antes        
+    biblio_df[['informacion adicional','departamento','observaciones','direccion',
+         'subcategoria', 'tipo_gestion', 'jurisdiccion']].astype(dtype = 'str')
+    biblio_df[['pantallas', 'butacas', 'espacio_incaa', 'cod_area', 'idsinca',
+              'ano_actualizacion', 'año_inauguracion']].astype(dtype = 'int')
+    
+    biblio_df = cambiar_tel(biblio_df)
 
     return biblio_df
 
@@ -183,12 +210,31 @@ def preparar_info2tabla1(df_completo):
     Parámetro: nombre de dataframe con datos conjuntos'''
 
     # selecciono las columnas para la Tabla1
-    col_selec = ['Cod_Loc', 'IdProvincia', 'IdDepartamento', 'Categoría',
-                 'Provincia', 'Localidad', 'Nombre', 'Dirección', 'CP',
-                 'Num_tel', 'Mail', 'Web','fecha_carga']
+    col_selec = ['cod_loc', 'idprovincia', 'iddepartamento', 'categoria',
+                 'provincia', 'localidad', 'nombre', 'direccion', 'cp',
+                 'num_tel', 'mail', 'web','fecha_carga']
     df_tabla1 = df_completo[col_selec].copy() # copio para no sobreescribir df
 
     return df_tabla1
+
+
+def agrupar_dataframe(nombre_df, lista_agrupar):
+    '''Agrupa un dataframe según algunas de sus características y devuelve 
+    uno nuevo'''
+
+    # agrupo según las características elegidas
+    df_agrupado = nombre_df.groupby(lista_agrupar)
+    # colapso todas las columnas en una tomando count() de 'Nombre'
+    df_colapsado = df_agrupado.nombre.count()
+    # x colapsar las columnas, se convierte en Serie, que hay que pasar a df
+    # 'lista_agrupar' se toma como índice, se reinterpreta c/ reset_index
+    total_agrupado = (df_colapsado.to_frame()).reset_index()
+    # renombro la cantidad
+    total_agrupado.rename(columns = {'nombre': 'cantidad total'})
+    # agrego la fecha
+    total_agrupado['fecha_carga'] = nombre_df['fecha_carga']
+
+    return total_agrupado
 
 
 def preparar_info2tabla2(df_completo):
@@ -196,36 +242,21 @@ def preparar_info2tabla2(df_completo):
     popular la tabla2 (categoría, fuente y provincia) de la base de datos.
     Parámetro: nombre de dataframe con datos conjuntos'''
 
-    fecha = date.today()    # fecha de descarga ('hoy') como objeto datetime
-    hoy = datetime.strftime(fecha, '%d-%m-%Y') # ahora, como str
     # columnas 'Categoría', 'Provincia', 'Fuente', 'fecha_carga'
-    # copio para no sobreescribir df original
-    df_categoria = (df_completo.copy()).groupby('Categoría')
-    cant_tot_categoria = df_categoria.Nombre.count()
-    cant_tot_categoria.to_frame()
-    cant_tot_categoria['fecha_carga'] = hoy
 
-    print(cant_tot_categoria)
-    print(cant_tot_categoria.shape)
+    # empiezo con agrupar x Categoría
+    totXcategoria = agrupar_dataframe(df_completo, ['categoria'])
+    print(totXcategoria)
 
-    df_fuente = (df_completo.copy()).groupby('Fuente')
-    cant_tot_fuente = df_fuente.Nombre.count()
-    cant_tot_fuente.to_frame()
-    cant_tot_fuente['fecha_carga'] = hoy
+    # agrupamos por Fuente     
+    totXfuente = agrupar_dataframe(df_completo, ['fuente'])
+    print(totXfuente)
 
-    print(cant_tot_fuente)
-    print(cant_tot_fuente.shape)
-
-    df_prov_cat = (df_completo.copy()).groupby(['Categoría','Provincia'])
-    cant_tot_prov_cat = df_prov_cat.Nombre.count()
-    cant_tot_prov_cat.to_frame()
-    cant_tot_prov_cat['fecha_carga'] = hoy
-
-    print(cant_tot_prov_cat)
-    print(cant_tot_prov_cat.shape)
+    # ahora agrupamos por Provincia y Categoría
+    totXcat_prov = agrupar_dataframe(df_completo, ['provincia', 'categoría'])
+    print(totXcat_prov)
 
     df_tabla2 = df_completo.copy()   # sacar y modificar la tabla
-
 
     return df_tabla2
 
@@ -236,31 +267,27 @@ def preparar_info2tabla3(df_completo):
     Parámetro: nombre de dataframe con datos conjuntos '''
 
     # selecciono las columnas para la Tabla3
-    col_selec = ['Provincia', 'Pantallas', 'Butacas', 'espacio_INCAA',
-                 'fecha_carga']
+    col_selec = ['Provincia', 'Pantallas', 'Butacas', 'espacio_INCAA']
 
-    # selecciono sólo las 'Salas de cine' y creo df nuevo c/ las col necesarias
+    # selecciono sólo las 'Salas de cine'
     df_tab3 = df_completo[df_completo['Categoría'] ==
-                            'Salas de cine'][col_selec].copy()
-    df_tabla3 = df_tab3.count()
-
+                            'Salas de cine'].copy()
+    # creo df nuevo c/ las col necesarias, agrupado por provincia, la suma de
+    # los valores agrupados y con
+    df_tabla3 = (df_tab3[col_selec].groupby('Provincia').sum()).reset_index()
+    df_tabla3['fecha_carga'] = df_completo['fecha_carga']
     print(df_tabla3)
-    print(df_tabla3.shape)
-
-    # indico que estas columnas tienen números enteros
-    #df_tabla3['Pantallas'] =  df_tabla3['Pantallas'].astype(int)
-    #df_tabla3['Butacas'] =  df_tabla3['Butacas'].astype(int)
-
 
     return df_tabla3
+
 
 def conectar_y_popular_db(df_tabla1, df_tabla2, df_tabla3):
     ''' Genera una conexión al motor de PostgreSQL usando sessionmaker y
     scoped_session de SQLalchemy, para popular las tablas previamente creadas
     corriendo 'crear_tablas_postgres.py' mediante df.to_sql.'''
 
-    # viene de 'config.ini': 'postgresql://postgres:pepe@localhost:5432/postgres'
-    param = config(seccion = 'postgresql')
+    # desde 'config.ini': 'postgresql://postgres:pepe@localhost:5432/postgres'
+    param = config(archivo = 'config.ini', seccion = 'postgresql')
     uno = param['user']
     dos = param['password']
     tres = param['host']
@@ -269,26 +296,26 @@ def conectar_y_popular_db(df_tabla1, df_tabla2, df_tabla3):
     base_datos = f"postgresql://{uno}:{dos}@{tres}:{cuatro}/{cinco}"
     motor_db = create_engine(base_datos)
 
-    # populo las tablas, si hay información previa, la reemplazo
-    # usar 'with xxx as xxx: garantiza que la conexión será cerrada al terminar
+    # populo las tablas: si hay información previa, la reemplazo
+    # usar 'with xxx as xxx:' garantiza q la conexión será cerrada al terminar
     # la inyección de datos
-    with motor_db.begin() as con:
-        df_tabla1.to_sql('tabla1', con, if_exists = 'replace', index = False)
-        df_tabla2.to_sql('tabla2', con, if_exists = 'replace', index = False)
-        df_tabla3.to_sql('tabla3_cines', con, if_exists = 'replace',
+    with motor_db.begin() as conn:
+        df_tabla1.to_sql('tabla1', conn, if_exists = 'replace', index = False)
+        df_tabla2.to_sql('tabla2', conn, if_exists = 'replace', index = False)
+        df_tabla3.to_sql('tabla3_cines', conn, if_exists = 'replace',
                          index = False)
 
     return
 
 
-def fn_ppal():
+def el_anillo_unico_para_gobernarlos_a_todos():
     ''' Organiza todo el pipeline de descarga y procesamiento de los archivos
     fuente hasta la población de las tablas Postgres.
-    Extrae los urls y parámetros para conectarse al motor de Postgres del
-    archivo de configuración "config.ini"'''
+    Extrae los urls de archivos fuente y parámetros para conectarse al motor de
+    Postgres del archivo de configuración "config.ini"'''
 
     # levanto los urls de los archivos fuentes desde 'config.ini'
-    urls = config(seccion = 'url')
+    urls = config(archivo = 'config.ini', seccion = 'url')
     url_museo = urls.get('url_museo')
     url_cine = urls.get('url_cine')
     url_biblio = urls.get('url_biblio')
@@ -310,7 +337,6 @@ def fn_ppal():
 
     # uno los 3 dataframes en un único df
     df_datos_cjtos = unir_df(df_museo, df_cine, df_biblio)
-    print(df_datos_cjtos['Web'])
 
     # preparo df 's con la info para popular las tablas de la BD
     tabla1_df = preparar_info2tabla1(df_datos_cjtos)
@@ -325,4 +351,4 @@ def fn_ppal():
 
 if __name__ == '__main__':
 
-    fn_ppal()
+    el_anillo_unico_para_gobernarlos_a_todos()

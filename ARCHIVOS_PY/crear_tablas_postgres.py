@@ -17,7 +17,7 @@ def ejecutar_sql():
     tablas = ['crear_tabla1.sql','crear_tabla2.sql', 'crear_tabla3_cines.sql']
     try:
         # Lectura de los parámetros de conexion
-        params = config(seccion = 'postgresql')
+        params = config(archivo = 'config.ini', seccion = 'postgresql')
 
         # Conexion al servidor de PostgreSQL
         print('Conectando a la base de datos PostgreSQL...')
@@ -42,7 +42,7 @@ def ejecutar_sql():
     finally:
         if conexion is not None:
             conexion.close()
-            print('Conexión finalizada.')
+            print('Conexión finalizada!')
 
 
 if __name__ == '__main__':
